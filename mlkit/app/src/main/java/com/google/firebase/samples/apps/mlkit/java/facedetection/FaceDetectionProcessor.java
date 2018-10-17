@@ -27,7 +27,10 @@ import com.google.firebase.samples.apps.mlkit.common.GraphicOverlay;
 import com.google.firebase.samples.apps.mlkit.java.VisionProcessorBase;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 /** Face Detector Demo. */
 public class FaceDetectionProcessor extends VisionProcessorBase<List<FirebaseVisionFace>> {
@@ -35,6 +38,8 @@ public class FaceDetectionProcessor extends VisionProcessorBase<List<FirebaseVis
   private static final String TAG = "FaceDetectionProcessor";
 
   private final FirebaseVisionFaceDetector detector;
+
+  private Map<Integer, FaceData> currentFaces = new HashMap<>();
 
   public FaceDetectionProcessor() {
     FirebaseVisionFaceDetectorOptions options =
@@ -66,17 +71,52 @@ public class FaceDetectionProcessor extends VisionProcessorBase<List<FirebaseVis
       @NonNull List<FirebaseVisionFace> faces,
       @NonNull FrameMetadata frameMetadata,
       @NonNull GraphicOverlay graphicOverlay) {
-    graphicOverlay.clear();
-    for (int i = 0; i < faces.size(); ++i) {
-      FirebaseVisionFace face = faces.get(i);
-      FaceGraphic faceGraphic = new FaceGraphic(graphicOverlay);
-      graphicOverlay.add(faceGraphic);
-      faceGraphic.updateFace(face, frameMetadata.getCameraFacing());
+    removeNoLongerPresentFaces(faces, graphicOverlay);
+    processPresentFaces(faces, frameMetadata, graphicOverlay);
+  }
+
+  private void processPresentFaces(@NonNull List<FirebaseVisionFace> faces, @NonNull FrameMetadata frameMetadata, @NonNull GraphicOverlay graphicOverlay) {
+    for (FirebaseVisionFace face : faces) {
+       FaceData existingFaceEntry = currentFaces.get(face.getTrackingId());
+       if (existingFaceEntry == null) {
+         FaceGraphic faceGraphic = new FaceGraphic(graphicOverlay);
+         graphicOverlay.add(faceGraphic);
+         existingFaceEntry = new FaceData(face, faceGraphic);
+         currentFaces.put(face.getTrackingId(), existingFaceEntry);
+       }
+       existingFaceEntry.faceGraphic.updateFace(face, frameMetadata.getCameraFacing());
+    }
+  }
+
+  private void removeNoLongerPresentFaces(@NonNull List<FirebaseVisionFace> faces, @NonNull GraphicOverlay graphicOverlay) {
+    for (Iterator<Map.Entry<Integer, FaceData>> it = currentFaces.entrySet().iterator(); it.hasNext();) {
+      Map.Entry<Integer, FaceData> mapEntry = it.next();
+      boolean found = false;
+      for (FirebaseVisionFace face : faces) {
+        if (mapEntry.getValue().face.getTrackingId() == face.getTrackingId()) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        it.remove();
+        graphicOverlay.remove(mapEntry.getValue().faceGraphic);
+      }
     }
   }
 
   @Override
   protected void onFailure(@NonNull Exception e) {
     Log.e(TAG, "Face detection failed " + e);
+  }
+
+  static class FaceData {
+    public FirebaseVisionFace face;
+    public FaceGraphic faceGraphic;
+
+    public FaceData(FirebaseVisionFace face, FaceGraphic faceGraphic) {
+      this.face = face;
+      this.faceGraphic = faceGraphic;
+    }
   }
 }
